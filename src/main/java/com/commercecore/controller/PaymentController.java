@@ -4,6 +4,7 @@ package com.commercecore.controller;
 import com.commercecore.dto.PaymentResponse;
 import com.commercecore.service.PaymentService;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -15,14 +16,16 @@ import org.springframework.web.server.ResponseStatusException;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final boolean simulationEnabled;
 
-    public PaymentController(PaymentService paymentService) {
+    public PaymentController(
+            PaymentService paymentService,
+            @Value("${commercecore.payments.simulation-enabled:false}")
+            boolean simulationEnabled) {
+
         this.paymentService = paymentService;
+        this.simulationEnabled = simulationEnabled;
     }
-
-    // ============================================================
-    // IDENTIFICAR USUARIO AUTENTICADO
-    // ============================================================
 
     private Long authenticatedUserId(Jwt jwt) {
 
@@ -43,10 +46,17 @@ public class PaymentController {
         }
     }
 
-    // ============================================================
-    // CRIAR PAGAMENTO SIMULADO
-    // ============================================================
+    private void requireSimulationEnabled() {
 
+        if (!simulationEnabled) {
+            throw new ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "Payment simulation is disabled"
+            );
+        }
+    }
+
+    // Criar pagamento pendente.
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public PaymentResponse createPayment(
@@ -59,10 +69,7 @@ public class PaymentController {
         );
     }
 
-    // ============================================================
-    // CONSULTAR PAGAMENTO
-    // ============================================================
-
+    // Consultar pagamento.
     @GetMapping
     public PaymentResponse getPayment(
             @AuthenticationPrincipal Jwt jwt,
@@ -74,14 +81,13 @@ public class PaymentController {
         );
     }
 
-    // ============================================================
-    // APROVAR PAGAMENTO SIMULADO
-    // ============================================================
-
+    // Aprovar somente quando a simulacao estiver habilitada.
     @PostMapping("/approve")
     public PaymentResponse approvePayment(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable Long orderId) {
+
+        requireSimulationEnabled();
 
         return paymentService.approvePayment(
             authenticatedUserId(jwt),
@@ -89,14 +95,13 @@ public class PaymentController {
         );
     }
 
-    // ============================================================
-    // REJEITAR PAGAMENTO SIMULADO
-    // ============================================================
-
+    // Rejeitar somente quando a simulacao estiver habilitada.
     @PostMapping("/reject")
     public PaymentResponse rejectPayment(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable Long orderId) {
+
+        requireSimulationEnabled();
 
         return paymentService.rejectPayment(
             authenticatedUserId(jwt),
