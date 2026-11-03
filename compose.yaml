@@ -1,0 +1,49 @@
+﻿
+services:
+  postgres:
+    image: postgres:16
+    container_name: commercecore-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: commercecore
+      POSTGRES_USER: commercecore
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
+
+    ports:
+      - "127.0.0.1:5434:5432"
+
+    volumes:
+      - commercecore_pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commercecore -d commercecore"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: commercecore-api:1.0
+    container_name: commercecore-api
+    restart: unless-stopped
+
+    ports:
+      - "8081:8081"
+
+    environment:
+      SERVER_PORT: "8081"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/commercecore
+      SPRING_DATASOURCE_USERNAME: commercecore
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
+      COMMERCECORE_JWT_SECRET: ${COMMERCECORE_JWT_SECRET:?JWT secret required}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  commercecore_pgdata:
