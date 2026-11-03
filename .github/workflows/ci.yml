@@ -1,0 +1,61 @@
+
+name: CommerceCore CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build and Tests
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: commercecore_test
+          POSTGRES_USER: commercecore
+          POSTGRES_PASSWORD: ci_test_password
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U commercecore -d commercecore_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      COMMERCECORE_DB_PASSWORD: ci_test_password
+      SPRING_PROFILES_ACTIVE: test
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5434/commercecore_test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Make Maven Wrapper executable
+        run: chmod +x ./mvnw
+
+      - name: Run tests
+        run: ./mvnw -B clean test
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          if-no-files-found: ignore
