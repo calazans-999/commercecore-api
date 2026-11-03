@@ -13,12 +13,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -45,6 +46,13 @@ class OrderIntegrationTest {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    // ============================================================
+    // METODOS AUXILIARES
+    // ============================================================
 
     private Long createCustomer() {
 
@@ -92,15 +100,23 @@ class OrderIntegrationTest {
         return mockMvc.perform(
                 post("/api/v1/cart/items")
                     .with(jwt()
-                        .jwt(token -> token.subject(userId.toString()))
+                        .jwt(token ->
+                            token.subject(userId.toString())
+                        )
                         .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
+                            new SimpleGrantedAuthority(
+                                "ROLE_CUSTOMER"
+                            )
                         ))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(body))
             .andExpect(status().isOk())
             .andReturn();
     }
+
+    // ============================================================
+    // TESTE 1 - CHECKOUT COM SUCESSO
+    // ============================================================
 
     @Test
     void shouldCheckoutSuccessfully() throws Exception {
@@ -113,9 +129,13 @@ class OrderIntegrationTest {
         MvcResult result = mockMvc.perform(
                 post("/api/v1/orders/checkout")
                     .with(jwt()
-                        .jwt(token -> token.subject(userId.toString()))
+                        .jwt(token ->
+                            token.subject(userId.toString())
+                        )
                         .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
+                            new SimpleGrantedAuthority(
+                                "ROLE_CUSTOMER"
+                            )
                         )))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.status").value("PLACED"))
@@ -123,7 +143,9 @@ class OrderIntegrationTest {
             .andExpect(jsonPath("$.items[0].quantity").value(2))
             .andReturn();
 
-        assertNotNull(result.getResponse().getContentAsString());
+        assertNotNull(
+            result.getResponse().getContentAsString()
+        );
 
         Product product = productRepository.findById(productId)
             .orElseThrow();
@@ -133,13 +155,21 @@ class OrderIntegrationTest {
         mockMvc.perform(
                 get("/api/v1/cart")
                     .with(jwt()
-                        .jwt(token -> token.subject(userId.toString()))
+                        .jwt(token ->
+                            token.subject(userId.toString())
+                        )
                         .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
+                            new SimpleGrantedAuthority(
+                                "ROLE_CUSTOMER"
+                            )
                         )))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.totalItems").value(0));
     }
+
+    // ============================================================
+    // TESTE 2 - CARRINHO VAZIO
+    // ============================================================
 
     @Test
     void shouldRejectCheckoutWithEmptyCart() throws Exception {
@@ -149,21 +179,33 @@ class OrderIntegrationTest {
         mockMvc.perform(
                 get("/api/v1/cart")
                     .with(jwt()
-                        .jwt(token -> token.subject(userId.toString()))
+                        .jwt(token ->
+                            token.subject(userId.toString())
+                        )
                         .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
+                            new SimpleGrantedAuthority(
+                                "ROLE_CUSTOMER"
+                            )
                         )))
             .andExpect(status().isOk());
 
         mockMvc.perform(
                 post("/api/v1/orders/checkout")
                     .with(jwt()
-                        .jwt(token -> token.subject(userId.toString()))
+                        .jwt(token ->
+                            token.subject(userId.toString())
+                        )
                         .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
+                            new SimpleGrantedAuthority(
+                                "ROLE_CUSTOMER"
+                            )
                         )))
             .andExpect(status().isBadRequest());
     }
+
+    // ============================================================
+    // TESTE 3 - ESTOQUE INSUFICIENTE
+    // ============================================================
 
     @Test
     void shouldRejectCheckoutWhenStockIsInsufficient()
@@ -174,8 +216,7 @@ class OrderIntegrationTest {
 
         addItem(userId, productId, 5);
 
-        // Simula uma redução do estoque após o item
-        // ter sido adicionado ao carrinho.
+        // Simula reducao do estoque depois da adicao ao carrinho.
         Product product = productRepository.findById(productId)
             .orElseThrow();
 
@@ -185,9 +226,13 @@ class OrderIntegrationTest {
         mockMvc.perform(
                 post("/api/v1/orders/checkout")
                     .with(jwt()
-                        .jwt(token -> token.subject(userId.toString()))
+                        .jwt(token ->
+                            token.subject(userId.toString())
+                        )
                         .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
+                            new SimpleGrantedAuthority(
+                                "ROLE_CUSTOMER"
+                            )
                         )))
             .andExpect(status().isConflict());
 
@@ -201,13 +246,21 @@ class OrderIntegrationTest {
         mockMvc.perform(
                 get("/api/v1/cart")
                     .with(jwt()
-                        .jwt(token -> token.subject(userId.toString()))
+                        .jwt(token ->
+                            token.subject(userId.toString())
+                        )
                         .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
+                            new SimpleGrantedAuthority(
+                                "ROLE_CUSTOMER"
+                            )
                         )))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.totalItems").value(5));
     }
+
+    // ============================================================
+    // TESTE 4 - ISOLAMENTO ENTRE CLIENTES
+    // ============================================================
 
     @Test
     void shouldNotExposeOrdersToOtherCustomers() throws Exception {
@@ -221,9 +274,13 @@ class OrderIntegrationTest {
         MvcResult checkout = mockMvc.perform(
                 post("/api/v1/orders/checkout")
                     .with(jwt()
-                        .jwt(token -> token.subject(firstUser.toString()))
+                        .jwt(token ->
+                            token.subject(firstUser.toString())
+                        )
                         .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
+                            new SimpleGrantedAuthority(
+                                "ROLE_CUSTOMER"
+                            )
                         )))
             .andExpect(status().isCreated())
             .andReturn();
@@ -236,86 +293,235 @@ class OrderIntegrationTest {
         mockMvc.perform(
                 get("/api/v1/orders/{id}", orderId.longValue())
                     .with(jwt()
-                        .jwt(token -> token.subject(secondUser.toString()))
+                        .jwt(token ->
+                            token.subject(secondUser.toString())
+                        )
                         .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
+                            new SimpleGrantedAuthority(
+                                "ROLE_CUSTOMER"
+                            )
                         )))
             .andExpect(status().isNotFound());
 
         mockMvc.perform(
                 get("/api/v1/orders")
                     .with(jwt()
-                        .jwt(token -> token.subject(secondUser.toString()))
+                        .jwt(token ->
+                            token.subject(secondUser.toString())
+                        )
                         .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
+                            new SimpleGrantedAuthority(
+                                "ROLE_CUSTOMER"
+                            )
                         )))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.totalElements").value(0));
     }
 
+    // ============================================================
+    // TESTE 5 - ROLLBACK REAL DO CHECKOUT
+    // ============================================================
 
     @Test
-	@Transactional(propagation = Propagation.NOT_SUPPORTED)
-	void shouldRollbackCheckoutWhenAnotherProductHasInsufficientStock()
-        	throws Exception {
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void shouldRollbackCheckoutWhenAnotherProductHasInsufficientStock()
+            throws Exception {
 
-        Long userId = createCustomer();
-        Long firstProductId = createProduct(10);
-        Long secondProductId = createProduct(3);
+        // O array permite registrar os IDs durante a preparacao,
+        // inclusive quando ocorre uma falha parcial.
+        final Long[] createdIds = new Long[3];
 
-        addItem(userId, firstProductId, 2);
-        addItem(userId, secondProductId, 3);
+        try {
 
-        // O estoque muda depois que os itens entram no carrinho.
-        Product secondProduct = productRepository.findById(secondProductId)
-            .orElseThrow();
-        secondProduct.setStockQuantity(1);
-        productRepository.saveAndFlush(secondProduct);
+            // As variaveis locais sao atribuidas apenas uma vez.
+            // Assim podem ser utilizadas nas expressoes lambda.
 
-        mockMvc.perform(
-                post("/api/v1/orders/checkout")
-                    .with(jwt()
-                        .jwt(token -> token.subject(userId.toString()))
-                        .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
-                        )))
-            .andExpect(status().isConflict());
+            final Long userId = createCustomer();
+            createdIds[0] = userId;
 
-        // Nenhum desconto de estoque deve permanecer.
-        assertEquals(
-            10,
-            productRepository.findById(firstProductId)
-                .orElseThrow()
-                .getStockQuantity()
+            final Long firstProductId = createProduct(10);
+            createdIds[1] = firstProductId;
+
+            final Long secondProductId = createProduct(3);
+            createdIds[2] = secondProductId;
+
+            addItem(userId, firstProductId, 2);
+            addItem(userId, secondProductId, 3);
+
+            // O estoque do segundo produto muda depois
+            // que ele foi adicionado ao carrinho.
+
+            Product secondProduct =
+                productRepository.findById(secondProductId)
+                    .orElseThrow();
+
+            secondProduct.setStockQuantity(1);
+            productRepository.saveAndFlush(secondProduct);
+
+            // O checkout deve ser rejeitado.
+
+            mockMvc.perform(
+                    post("/api/v1/orders/checkout")
+                        .with(jwt()
+                            .jwt(token ->
+                                token.subject(userId.toString())
+                            )
+                            .authorities(
+                                new SimpleGrantedAuthority(
+                                    "ROLE_CUSTOMER"
+                                )
+                            )))
+                .andExpect(status().isConflict());
+
+            // O primeiro produto nao pode perder estoque.
+
+            assertEquals(
+                10,
+                productRepository.findById(firstProductId)
+                    .orElseThrow()
+                    .getStockQuantity()
+            );
+
+            // O segundo produto deve continuar com
+            // o estoque reduzido antes do checkout.
+
+            assertEquals(
+                1,
+                productRepository.findById(secondProductId)
+                    .orElseThrow()
+                    .getStockQuantity()
+            );
+
+            // O checkout rejeitado nao deve criar pedidos.
+
+            mockMvc.perform(
+                    get("/api/v1/orders")
+                        .with(jwt()
+                            .jwt(token ->
+                                token.subject(userId.toString())
+                            )
+                            .authorities(
+                                new SimpleGrantedAuthority(
+                                    "ROLE_CUSTOMER"
+                                )
+                            )))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+
+            // O carrinho deve preservar os cinco itens.
+
+            mockMvc.perform(
+                    get("/api/v1/cart")
+                        .with(jwt()
+                            .jwt(token ->
+                                token.subject(userId.toString())
+                            )
+                            .authorities(
+                                new SimpleGrantedAuthority(
+                                    "ROLE_CUSTOMER"
+                                )
+                            )))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalItems").value(5));
+
+        } finally {
+
+            cleanupRollbackTest(
+                createdIds[0],
+                createdIds[1],
+                createdIds[2]
+            );
+        }
+    }
+
+    // ============================================================
+    // LIMPEZA AUTOMATICA DOS DADOS DO TESTE DE ROLLBACK
+    // ============================================================
+
+    private void cleanupRollbackTest(
+            Long userId,
+            Long firstProductId,
+            Long secondProductId) {
+
+        // Descobre as categorias dos produtos ainda existentes.
+        Long firstCategoryId = findCategoryId(firstProductId);
+        Long secondCategoryId = findCategoryId(secondProductId);
+
+        if (userId != null) {
+
+            jdbcTemplate.update("""
+                DELETE FROM order_items
+                WHERE order_id IN (
+                    SELECT id FROM orders WHERE user_id = ?
+                )
+                """, userId);
+
+            jdbcTemplate.update("""
+                DELETE FROM cart_items
+                WHERE cart_id IN (
+                    SELECT id FROM carts WHERE user_id = ?
+                )
+                """, userId);
+
+            jdbcTemplate.update(
+                "DELETE FROM orders WHERE user_id = ?",
+                userId
+            );
+
+            jdbcTemplate.update(
+                "DELETE FROM carts WHERE user_id = ?",
+                userId
+            );
+        }
+
+        if (firstProductId != null) {
+            jdbcTemplate.update(
+                "DELETE FROM products WHERE id = ?",
+                firstProductId
+            );
+        }
+
+        if (secondProductId != null) {
+            jdbcTemplate.update(
+                "DELETE FROM products WHERE id = ?",
+                secondProductId
+            );
+        }
+
+        if (firstCategoryId != null) {
+            jdbcTemplate.update(
+                "DELETE FROM categories WHERE id = ?",
+                firstCategoryId
+            );
+        }
+
+        if (secondCategoryId != null) {
+            jdbcTemplate.update(
+                "DELETE FROM categories WHERE id = ?",
+                secondCategoryId
+            );
+        }
+
+        if (userId != null) {
+            jdbcTemplate.update(
+                "DELETE FROM users WHERE id = ?",
+                userId
+            );
+        }
+    }
+
+    private Long findCategoryId(Long productId) {
+
+        if (productId == null) {
+            return null;
+        }
+
+        var categoryIds = jdbcTemplate.queryForList(
+            "SELECT category_id FROM products WHERE id = ?",
+            Long.class,
+            productId
         );
 
-        assertEquals(
-            1,
-            productRepository.findById(secondProductId)
-                .orElseThrow()
-                .getStockQuantity()
-        );
-
-        // O checkout rejeitado nao deve criar um pedido.
-        mockMvc.perform(
-                get("/api/v1/orders")
-                    .with(jwt()
-                        .jwt(token -> token.subject(userId.toString()))
-                        .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
-                        )))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.totalElements").value(0));
-
-        // O carrinho permanece com as cinco unidades solicitadas.
-        mockMvc.perform(
-                get("/api/v1/cart")
-                    .with(jwt()
-                        .jwt(token -> token.subject(userId.toString()))
-                        .authorities(
-                            new SimpleGrantedAuthority("ROLE_CUSTOMER")
-                        )))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.totalItems").value(5));
+        return categoryIds.isEmpty() ? null : categoryIds.get(0);
     }
 }
