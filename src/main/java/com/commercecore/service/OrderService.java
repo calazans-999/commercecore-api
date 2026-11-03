@@ -8,6 +8,7 @@ import com.commercecore.entity.Cart;
 import com.commercecore.entity.CartItem;
 import com.commercecore.entity.Order;
 import com.commercecore.entity.OrderItem;
+import com.commercecore.entity.OrderStatus;
 import com.commercecore.entity.Product;
 import com.commercecore.entity.User;
 
@@ -46,6 +47,10 @@ public class OrderService {
         this.productRepository = productRepository;
         this.entityManager = entityManager;
     }
+
+    // ============================================================
+    // CHECKOUT - FINALIZAR COMPRA
+    // ============================================================
 
     @Transactional
     public OrderResponse checkout(Long userId) {
@@ -130,6 +135,96 @@ public class OrderService {
         return toResponse(savedOrder);
     }
 
+    // ============================================================
+    // CANCELAMENTO DE PEDIDOS
+    // ============================================================
+
+    @Transactional
+    public OrderResponse cancelOrder(Long userId, Long orderId) {
+
+        // 1. Busca e bloqueia o pedido pertencente ao cliente.
+        Order order = orderRepository
+            .findByIdAndUserIdForUpdate(orderId, userId)
+            .orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Order not found"
+            ));
+
+        // 2. Impede cancelamentos duplicados.
+        if (order.getStatus() != OrderStatus.PLACED) {
+            throw new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Only placed orders can be cancelled"
+            );
+        }
+
+        // 3. Ordena os itens pelo ID do produto.
+        // Mantem a mesma ordem de bloqueio do checkout.
+        List<OrderItem> items = order.getItems()
+            .stream()
+            .sorted(Comparator.comparing(
+                item -> item.getProduct().getId()
+            ))
+            .toList();
+
+        // 4. Devolve as unidades compradas ao estoque.
+        for (OrderItem item : items) {
+
+            Long productId = item.getProduct().getId();
+
+            Product product = productRepository
+                .findByIdForUpdate(productId)
+                .orElseThrow(() -> new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Product not found: " + productId
+                ));
+
+            Integer currentStock = product.getStockQuantity();
+            Integer quantityToRestore = item.getQuantity();
+
+            if (currentStock == null ||
+                    quantityToRestore == null ||
+                    quantityToRestore <= 0) {
+
+                throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Invalid stock data for product: " + productId
+                );
+            }
+
+            // Evita overflow ao somar as quantidades.
+            int restoredStock;
+
+            try {
+                restoredStock = Math.addExact(
+                    currentStock,
+                    quantityToRestore
+                );
+            } catch (ArithmeticException exception) {
+                throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Stock quantity overflow: " + productId
+                );
+            }
+
+            product.setStockQuantity(restoredStock);
+        }
+
+        // 5. Altera o status para CANCELLED.
+        order.cancel();
+
+        // 6. Persiste o cancelamento.
+        // As atualizacoes de estoque fazem parte da mesma transacao.
+        orderRepository.saveAndFlush(order);
+
+        // 7. Retorna o pedido atualizado.
+        return toResponse(order);
+    }
+
+    // ============================================================
+    // CONSULTAR PEDIDO POR ID
+    // ============================================================
+
     @Transactional(readOnly = true)
     public OrderResponse getOrder(Long userId, Long orderId) {
 
@@ -143,6 +238,10 @@ public class OrderService {
         return toResponse(order);
     }
 
+    // ============================================================
+    // LISTAR HISTORICO DE PEDIDOS
+    // ============================================================
+
     @Transactional(readOnly = true)
     public Page<OrderResponse> listOrders(
             Long userId,
@@ -152,6 +251,10 @@ public class OrderService {
             .findByUserIdOrderByCreatedAtDesc(userId, pageable)
             .map(this::toResponse);
     }
+
+    // ============================================================
+    // CONVERTER ENTIDADE PARA DTO
+    // ============================================================
 
     private OrderResponse toResponse(Order order) {
 

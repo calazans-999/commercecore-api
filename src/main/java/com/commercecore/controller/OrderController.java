@@ -22,6 +22,10 @@ public class OrderController {
         this.orderService = orderService;
     }
 
+    // ============================================================
+    // IDENTIFICAR CLIENTE AUTENTICADO
+    // ============================================================
+
     private Long authenticatedUserId(Jwt jwt) {
 
         if (jwt == null) {
@@ -41,6 +45,10 @@ public class OrderController {
         }
     }
 
+    // ============================================================
+    // FINALIZAR COMPRA
+    // ============================================================
+
     @PostMapping("/checkout")
     @ResponseStatus(HttpStatus.CREATED)
     public OrderResponse checkout(
@@ -50,6 +58,25 @@ public class OrderController {
             authenticatedUserId(jwt)
         );
     }
+
+    // ============================================================
+    // CANCELAR PEDIDO
+    // ============================================================
+
+    @PostMapping("/{id}/cancel")
+    public OrderResponse cancelOrder(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable Long id) {
+
+        return orderService.cancelOrder(
+            authenticatedUserId(jwt),
+            id
+        );
+    }
+
+    // ============================================================
+    // LISTAR HISTORICO DE PEDIDOS
+    // ============================================================
 
     @GetMapping
     public Page<OrderResponse> listOrders(
@@ -61,6 +88,10 @@ public class OrderController {
             pageable
         );
     }
+
+    // ============================================================
+    // CONSULTAR PEDIDO POR ID
+    // ============================================================
 
     @GetMapping("/{id}")
     public OrderResponse getOrder(
