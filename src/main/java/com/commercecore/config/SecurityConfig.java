@@ -13,6 +13,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import com.commercecore.security.SecurityErrorHandler;
 
 import java.util.List;
 
@@ -21,20 +22,25 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(
-            HttpSecurity http,
-            JwtAuthenticationConverter jwtConverter)
-            throws Exception {
+        HttpSecurity http,
+        JwtAuthenticationConverter jwtConverter,
+        SecurityErrorHandler securityErrorHandler)
+        throws Exception {
 
         http
-            .csrf(csrf -> csrf.disable())
-            .sessionManagement(session ->
-                session.sessionCreationPolicy(
-                    SessionCreationPolicy.STATELESS
-                )
+        .csrf(csrf -> csrf.disable())
+        .sessionManagement(session ->
+            session.sessionCreationPolicy(
+                SessionCreationPolicy.STATELESS
             )
-            .formLogin(form -> form.disable())
-            .httpBasic(basic -> basic.disable())
-            .authorizeHttpRequests(auth -> auth
+        )
+        .formLogin(form -> form.disable())
+        .httpBasic(basic -> basic.disable())
+        .exceptionHandling(exceptions -> exceptions
+            .authenticationEntryPoint(securityErrorHandler)
+            .accessDeniedHandler(securityErrorHandler)
+        )
+        .authorizeHttpRequests(auth -> auth
 
                 .requestMatchers(
                     HttpMethod.POST,
