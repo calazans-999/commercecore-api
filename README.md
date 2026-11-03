@@ -72,6 +72,11 @@ Principais pacotes:
 - Registrar preços históricos
 - Consultar pedidos do cliente
 - Impedir acesso aos pedidos de outros usuários
+- Cancelamento de pedidos pelo próprio cliente
+- Reposição automática de estoque após cancelamento
+- Proteção contra cancelamentos duplicados (HTTP 409)
+- Bloqueio pessimista para operações concorrentes
+- Transações para manter a consistência entre pedido e estoque
 
 ## Endpoints principais
 
@@ -90,6 +95,7 @@ Principais pacotes:
 | POST | /api/v1/orders/checkout | Finalizar compra |
 | GET | /api/v1/orders | Listar pedidos |
 | GET | /api/v1/orders/{id} | Consultar pedido |
+| POST | /api/v1/orders/{id}/cancel | Cancelar pedido e repor estoque |
 
 ## Executando com Docker
 
@@ -152,7 +158,7 @@ O banco PostgreSQL utiliza quatro migrações Flyway:
 
 ## Testes automatizados
 
-O projeto possui 45 testes automatizados aprovados na última execução.
+O projeto possui 49 testes automatizados aprovados na última execução.
 
 Os testes cobrem autenticação, autorização, catálogo, carrinho, pedidos, checkout, validação de estoque, rollback e concorrência.
 
