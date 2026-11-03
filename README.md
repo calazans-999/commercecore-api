@@ -78,6 +78,28 @@ Principais pacotes:
 - Bloqueio pessimista para operações concorrentes
 - Transações para manter a consistência entre pedido e estoque
 
+
+### Pagamentos simulados
+
+O CommerceCore possui um módulo de pagamentos fictícios,
+destinado exclusivamente a demonstração e testes.
+
+Funcionalidades:
+- Criação de pagamentos vinculados a pedidos.
+- Estados PENDING, APPROVED e REJECTED.
+- Proteção contra pagamentos duplicados.
+- Validação de propriedade do pedido.
+- Bloqueios pessimistas e transações no PostgreSQL.
+- Impedimento de cancelar pedidos com pagamento aprovado.
+- Reposição de estoque ao cancelar pedidos elegíveis.
+- Testes de integração e concorrência.
+
+**Importante:** nenhuma cobrança financeira real é realizada.
+
+Os endpoints de aprovação e rejeição são demonstrativos.
+Em produção, essas operações devem ser controladas por
+um provedor de pagamentos confiável ou serviço autorizado.
+
 ## Endpoints principais
 
 | Método | Endpoint | Descrição |
@@ -96,6 +118,11 @@ Principais pacotes:
 | GET | /api/v1/orders | Listar pedidos |
 | GET | /api/v1/orders/{id} | Consultar pedido |
 | POST | /api/v1/orders/{id}/cancel | Cancelar pedido e repor estoque |
+| POST | /api/v1/orders/{orderId}/payment | Criar pagamento simulado |
+| GET | /api/v1/orders/{orderId}/payment | Consultar pagamento |
+| POST | /api/v1/orders/{orderId}/payment/approve | Simular aprovação |
+| POST | /api/v1/orders/{orderId}/payment/reject | Simular rejeição |
+
 
 ## Executando com Docker
 

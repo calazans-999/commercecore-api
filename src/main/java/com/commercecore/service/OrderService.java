@@ -11,6 +11,9 @@ import com.commercecore.entity.OrderItem;
 import com.commercecore.entity.OrderStatus;
 import com.commercecore.entity.Product;
 import com.commercecore.entity.User;
+import com.commercecore.entity.Payment;
+import com.commercecore.entity.PaymentStatus;
+import com.commercecore.repository.PaymentRepository;
 
 import com.commercecore.repository.CartRepository;
 import com.commercecore.repository.OrderRepository;
@@ -34,19 +37,24 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final CartRepository cartRepository;
     private final ProductRepository productRepository;
+    private final PaymentRepository paymentRepository;
     private final EntityManager entityManager;
 
-    public OrderService(
-            OrderRepository orderRepository,
-            CartRepository cartRepository,
-            ProductRepository productRepository,
-            EntityManager entityManager) {
 
-        this.orderRepository = orderRepository;
-        this.cartRepository = cartRepository;
-        this.productRepository = productRepository;
-        this.entityManager = entityManager;
-    }
+    public OrderService(
+        OrderRepository orderRepository,
+        CartRepository cartRepository,
+        ProductRepository productRepository,
+        PaymentRepository paymentRepository,
+        EntityManager entityManager) {
+
+    this.orderRepository = orderRepository;
+    this.cartRepository = cartRepository;
+    this.productRepository = productRepository;
+    this.paymentRepository = paymentRepository;
+    this.entityManager = entityManager;
+}
+
 
     // ============================================================
     // CHECKOUT - FINALIZAR COMPRA
@@ -139,87 +147,110 @@ public class OrderService {
     // CANCELAMENTO DE PEDIDOS
     // ============================================================
 
-    @Transactional
-    public OrderResponse cancelOrder(Long userId, Long orderId) {
 
-        // 1. Busca e bloqueia o pedido pertencente ao cliente.
-        Order order = orderRepository
-            .findByIdAndUserIdForUpdate(orderId, userId)
+@Transactional
+public OrderResponse cancelOrder(Long userId, Long orderId) {
+
+    // 1. Bloqueia o pedido e verifica a propriedade.
+    Order order = orderRepository
+        .findByIdAndUserIdForUpdate(orderId, userId)
+        .orElseThrow(() -> new ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Order not found"
+        ));
+
+    // 2. Impede o cancelamento duplicado.
+    if (order.getStatus() != OrderStatus.PLACED) {
+        throw new ResponseStatusException(
+            HttpStatus.CONFLICT,
+            "Only placed orders can be cancelled"
+        );
+    }
+
+    // 3. Bloqueia o pagamento existente, se houver.
+    Payment payment = paymentRepository
+        .findByOrderIdAndUserIdForUpdate(orderId, userId)
+        .orElse(null);
+
+    // 4. Impede cancelar pedidos com pagamento aprovado.
+    if (payment != null &&
+            payment.getStatus() == PaymentStatus.APPROVED) {
+
+        throw new ResponseStatusException(
+            HttpStatus.CONFLICT,
+            "Approved payments require a refund before cancellation"
+        );
+    }
+
+    // 5. Ordena os itens para manter a ordem dos bloqueios.
+    List<OrderItem> items = order.getItems()
+        .stream()
+        .sorted(Comparator.comparing(
+            item -> item.getProduct().getId()
+        ))
+        .toList();
+
+    // 6. Devolve os produtos ao estoque.
+    for (OrderItem item : items) {
+
+        Long productId = item.getProduct().getId();
+
+        Product product = productRepository
+            .findByIdForUpdate(productId)
             .orElseThrow(() -> new ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "Order not found"
+                HttpStatus.CONFLICT,
+                "Product not found: " + productId
             ));
 
-        // 2. Impede cancelamentos duplicados.
-        if (order.getStatus() != OrderStatus.PLACED) {
+        Integer currentStock = product.getStockQuantity();
+        Integer quantityToRestore = item.getQuantity();
+
+        if (currentStock == null ||
+                quantityToRestore == null ||
+                quantityToRestore <= 0) {
+
             throw new ResponseStatusException(
                 HttpStatus.CONFLICT,
-                "Only placed orders can be cancelled"
+                "Invalid stock data for product: " + productId
             );
         }
 
-        // 3. Ordena os itens pelo ID do produto.
-        // Mantem a mesma ordem de bloqueio do checkout.
-        List<OrderItem> items = order.getItems()
-            .stream()
-            .sorted(Comparator.comparing(
-                item -> item.getProduct().getId()
-            ))
-            .toList();
+        int restoredStock;
 
-        // 4. Devolve as unidades compradas ao estoque.
-        for (OrderItem item : items) {
-
-            Long productId = item.getProduct().getId();
-
-            Product product = productRepository
-                .findByIdForUpdate(productId)
-                .orElseThrow(() -> new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Product not found: " + productId
-                ));
-
-            Integer currentStock = product.getStockQuantity();
-            Integer quantityToRestore = item.getQuantity();
-
-            if (currentStock == null ||
-                    quantityToRestore == null ||
-                    quantityToRestore <= 0) {
-
-                throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Invalid stock data for product: " + productId
-                );
-            }
-
-            // Evita overflow ao somar as quantidades.
-            int restoredStock;
-
-            try {
-                restoredStock = Math.addExact(
-                    currentStock,
-                    quantityToRestore
-                );
-            } catch (ArithmeticException exception) {
-                throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Stock quantity overflow: " + productId
-                );
-            }
-
-            product.setStockQuantity(restoredStock);
+        try {
+            restoredStock = Math.addExact(
+                currentStock,
+                quantityToRestore
+            );
+        } catch (ArithmeticException exception) {
+            throw new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Stock quantity overflow: " + productId
+            );
         }
 
-        // 5. Altera o status para CANCELLED.
-        order.cancel();
-
-        // 6. Persiste o cancelamento.
-        // As atualizacoes de estoque fazem parte da mesma transacao.
-        orderRepository.saveAndFlush(order);
-
-        // 7. Retorna o pedido atualizado.
-        return toResponse(order);
+        product.setStockQuantity(restoredStock);
     }
+
+    // 7. Rejeita um pagamento que ainda esteja pendente.
+    if (payment != null &&
+            payment.getStatus() == PaymentStatus.PENDING) {
+
+        payment.reject();
+        paymentRepository.saveAndFlush(payment);
+    }
+
+    // 8. Cancela o pedido.
+    order.cancel();
+
+    // 9. Persiste o novo status.
+    orderRepository.saveAndFlush(order);
+
+    // As alterações de estoque e pagamento serão confirmadas
+    // junto com o cancelamento ao final da transação.
+    return toResponse(order);
+}
+
 
     // ============================================================
     // CONSULTAR PEDIDO POR ID
